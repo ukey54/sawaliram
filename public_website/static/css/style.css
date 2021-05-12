@@ -3975,13 +3975,19 @@ figure.image figcaption {
 }
 
 .research-second-section {
-    background-color: #f2f2f2;
-    padding: 3rem 2rem;
+    background-image: url("/static/illustrations/Path_1734.svg");
+	background-size: cover;
+	background-repeat: no-repeat;
+	height: 100vh;
+    padding: 10rem 2rem;
+    /*padding: 3rem 2rem;*/
     margin-top: 3rem;
 }
 
 @media (max-width: 576px) {
     .research-second-section {
+        /*margin-top: 0px;
+        padding-right:48px;*/
         margin-top: 2rem;
         padding: 2rem 1rem;
     }
@@ -3989,6 +3995,8 @@ figure.image figcaption {
 
 .research-second-section .content-wrapper {
     display: flex;
+    align-items: center;
+	justify-content: center;
 }
 
 @media (max-width: 576px) {
