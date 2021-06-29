@@ -72,7 +72,9 @@ from dashboard.models import (
     SubmittedArticleTranslation,
     DraftArticleTranslation,
     Comment,
-    Dataset)
+    Dataset,
+    AnswerTranslationCredit,
+    ArticleTranslationCredit)
 
 from sawaliram_auth.models import Notification, User, VolunteerRequest
 from public_website.views import SearchView
@@ -941,6 +943,26 @@ class SubmitAnswerView(View):
                     )
                     edit_notification.save()
 
+                # create notifications for users who commented on the answer
+                commentor_id_list = list(answer.comments.all()
+                                        .values_list('author')
+                                        .distinct('author'))
+                for commentor_id in commentor_id_list:
+                    if question_to_answer.language.lower() != 'english':
+                        question_text = question_to_answer.question_text_english
+                    else:
+                        question_text = question_to_answer.question_text
+
+                    edit_notification = Notification(
+                        notification_type='updated',
+                        title_text=str(request.user.get_full_name()) + ' updated their answer',
+                        description_text="You commented on an answer for question '" + question_text + "'",
+                        target_url=reverse('dashboard:review-answer', kwargs={'question_id': question_to_answer.id, 'answer_id': answer.id}),
+                        user=User.objects.get(pk=max(commentor_id))
+                    )
+                    edit_notification.save()
+
+
             else:
                 messages.success(request, (_('Thanks ' + request.user.first_name + '! Your answer will be reviewed soon!')))
 
@@ -1433,6 +1455,7 @@ class CreateCommentView(CommentMixin, FormView):
             # Create notification for the comment
 
             if self.target.author != self.request.user:
+                
                 Notification.objects.create(
                     notification_type='comment',
                     title_text=('{} left a comment on your {}.'
@@ -1445,6 +1468,58 @@ class CreateCommentView(CommentMixin, FormView):
                     target_url=self.target.get_absolute_url(),
                     user=self.target.author,
                 )
+
+        if hasattr(self.target, 'comments'):
+            # Create notification for the comment for other reviewers
+
+            if self.target.translated_by != self.request.user:
+                for u in set([c.author for c in self.target.comments.all()]):
+                    
+                    if u != self.request.user:
+                        Notification.objects.create(
+                            notification_type='comment',
+                            title_text=('{} left a comment on your {}'
+                                .format(
+                                    self.request.user.get_full_name(),
+                                    self.target._meta.verbose_name,
+                                )),
+                            description_text=('Commented on {}'
+                                .format(self.target)),
+                            target_url=self.target.get_absolute_url(),
+                            user=u,
+                        )
+        if hasattr(self.target, 'translated_by'):
+            # Create notification for the comment for Translator
+
+            if self.target.translated_by != self.request.user and self.target.translated_by != None:
+                Notification.objects.create(
+                    notification_type='comment',
+                    title_text=('{} left a comment on your {}'
+                        .format(
+                            self.request.user.get_full_name(),
+                            self.target._meta.verbose_name,
+                        )),
+                    description_text=('Commented on {}'
+                        .format(self.target)),
+                    target_url=self.target.get_absolute_url(),
+                    user=self.target.translated_by,
+                )      
+            else:
+                for u in set([c.author for c in self.target.comments.all()]):
+                    
+                    if u != self.target.translated_by:
+                        Notification.objects.create(
+                            notification_type='comment',
+                            title_text=('{} (Translator) left a comment on {}'
+                                .format(
+                                    self.request.user.get_full_name(),
+                                    self.target._meta.verbose_name,
+                                )),
+                            description_text=('Commented on {}'
+                                .format(self.target)),
+                            target_url=self.target.get_absolute_url(),
+                            user=u,
+                        )
 
         return super().form_valid(form)
 
@@ -1736,6 +1811,9 @@ class CreateAnswerTranslation(BaseStartTranslation):
         return question
 
 
+
+
+
     def form_valid(self, form):
         return redirect(
             self.get_success_view(),
@@ -1960,6 +2038,30 @@ class EditArticleTranslation(BaseEditTranslation):
 
         return context
 
+    
+    def form_valid(self, form):
+        response = super().form_valid(form)
+
+        for credit in self.object.translation_credits.all():
+            credit.delete()
+
+        credit_titles = self.request.POST.getlist('credit-title')
+        credited_user_names = self.request.POST.getlist('credit-user-name')
+        credited_user_ids = self.request.POST.getlist('credit-user-id')
+
+        for i in range(len(credited_user_names)):
+            credit = ArticleTranslationCredit()
+            credit.credit_title = credit_titles[i]
+            credit.credit_user_name = credited_user_names[i]
+            if credited_user_ids[i]:
+                credit.is_user = True
+                credit.user = User.objects.get(pk=credited_user_ids[i])
+            credit.article = self.object
+            credit.save()
+
+        self.object.save()
+        return response
+
 
     def get_enable_breadcrumbs(self):
         """
@@ -2049,10 +2151,28 @@ class EditAnswerTranslation(BaseEditTranslation):
         if answer_text:
             self.answer.answer_text = answer_text
             self.answer.language = self.request.POST.get('lang_to') or self.answer.language
+
+
+            for credit in self.answer.translation_credits.all():
+                credit.delete()
+
+            credit_titles = self.request.POST.getlist('credit-title')
+            credited_user_names = self.request.POST.getlist('credit-user-name')
+            credited_user_ids = self.request.POST.getlist('credit-user-id')
+
+            for i in range(len(credited_user_names)):
+                credit = AnswerTranslationCredit()
+                credit.credit_title = credit_titles[i]
+                credit.credit_user_name = credited_user_names[i]
+                if credited_user_ids[i]:
+                    credit.is_user = True
+                    credit.user = User.objects.get(pk=credited_user_ids[i])
+                credit.answer = self.answer
+                credit.save()
+
             self.answer.save()
 
-        # If submitting, mark the answer as submitted for
-        # review too
+    
 
         if self.request.POST.get('mode') == 'submit':
             submission = self.answer.submit_draft()
@@ -2106,8 +2226,6 @@ class EditSubmittedAnswerTranslation(EditAnswerTranslation):
             id=self.kwargs.get('answer'))
 
         
-        # print(question.source.id, answer.source.question_id.id, question.id)
-
         # Make sure the question and answer match
         if answer.source.question_id.id != question.source.id:
             raise Http404('No matching translations found')
@@ -2290,7 +2408,7 @@ class BaseApproveTranslation(View):
                 .format(
                     self.request.user.get_full_name(),
                     p._meta.verbose_name,
-                ))[:50], # truncate it due to character limit
+                )),
             description_text=('Published {}'
                 .format(p)),
             target_url = p.get_absolute_url(),
@@ -2308,7 +2426,7 @@ class BaseApproveTranslation(View):
                     source_type=p.source._meta.verbose_name,
                     language=(get_language_info(p.language)
                         .get('name_translated')),
-                ))[:50], # truncate it due to character limit
+                )), 
             description_text='Translated {}'.format(p.source),
             target_url=p.get_absolute_url(),
             user=p.source.author,
@@ -2316,17 +2434,18 @@ class BaseApproveTranslation(View):
 
         # ...to the peer reviewers
         for u in set([c.author for c in p.comments.all()]):
-            Notification.objects.create(
-                notification_type='published',
-                title_text=((
-                    'The translation by {} that you commented on '
-                    'has been published.')
-                    .format(p.translated_by)
-                    )[:50], # truncate it due to character limit
+            if u != self.request.user and u != p.translated_by:
+                Notification.objects.create(
+                    notification_type='published',
+                    title_text=((
+                        'The translation by {} that you commented on '
+                        'has been published.')
+                        .format(p.translated_by.get_full_name())
+                        ),
                     description_text='Translated {}'.format(p.source),
-                target_url=p.get_absolute_url(),
-                user=u,
-            )
+                    target_url=p.get_absolute_url(),
+                    user=u,
+                )
 
         # Create success message and return
         messages.success(request, self.success_message)

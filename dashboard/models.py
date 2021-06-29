@@ -357,6 +357,8 @@ class AnswerTranslation(DraftableModel, TranslationMixin):
             self.language,
             self.source.question_id.question_text,
         )
+    def get_full_name(self): 
+        return self.get_full_name
 
 class DraftAnswerTranslation(
     AnswerTranslation.get_draft_model(),
@@ -427,6 +429,44 @@ class AnswerCredit(models.Model):
         super(AnswerCredit, self).save(*args, **kwargs)
 
 
+
+class AnswerTranslationCredit(models.Model):
+    """Define the data model for answer translation credits"""
+
+    class Meta:
+        db_table = 'answer_translation_credit'
+        ordering = ['credit_title_order']
+
+    credit_title = models.CharField(max_length=50)
+    credit_title_order = models.IntegerField(default=0)
+    credit_user_name = models.CharField(max_length=100)
+    is_user = models.BooleanField(default=False)
+    user = models.ForeignKey(
+        'sawaliram_auth.User',
+        related_name='answer_translation_credits',
+        on_delete=models.CASCADE,
+        default='',
+        blank=True,
+        null=True)
+    answer = models.ForeignKey(
+        'AnswerTranslation',
+        related_name='translation_credits',
+        on_delete=models.CASCADE)
+
+    created_on = models.DateTimeField(auto_now_add=True)
+    updated_on = models.DateTimeField(auto_now=True)
+
+    def save(self, *args, **kwargs):
+        credit_sorting_order = {
+            'translator': 1,
+            'co-translator': 2,
+            'translation-submitter': 3
+        }
+        self.credit_title_order = credit_sorting_order[self.credit_title]
+        super(AnswerTranslationCredit, self).save(*args, **kwargs)
+
+
+
 class ArticleCredit(models.Model):
     """Define the data model for article credits"""
 
@@ -461,6 +501,42 @@ class ArticleCredit(models.Model):
         }
         self.credit_title_order = credit_sorting_order[self.credit_title]
         super(ArticleCredit, self).save(*args, **kwargs)
+
+
+
+class ArticleTranslationCredit(models.Model):
+    """Define the data model for article translation credits"""
+
+    class Meta:
+        db_table = 'article_translation_credit'
+        ordering = ['credit_title_order']
+
+    credit_title = models.CharField(max_length=50)
+    credit_title_order = models.IntegerField(default=0)
+    credit_user_name = models.CharField(max_length=100)
+    is_user = models.BooleanField(default=False)
+    user = models.ForeignKey(
+        'sawaliram_auth.User',
+        related_name='article_translation_credits',
+        on_delete=models.CASCADE,
+        default='',
+        blank=True,
+        null=True)
+    article = models.ForeignKey(
+        'ArticleTranslation',
+        related_name='translation_credits',
+        on_delete=models.CASCADE)
+    created_on = models.DateTimeField(auto_now_add=True)
+    updated_on = models.DateTimeField(auto_now=True)
+
+    def save(self, *args, **kwargs):
+        credit_sorting_order = {
+            'translator': 1,
+            'co-translator': 2,
+            'translation-submitter': 3
+        }
+        self.credit_title_order = credit_sorting_order[self.credit_title]
+        super(ArticleTranslationCredit, self).save(*args, **kwargs)
 
 
 class UncuratedSubmission(models.Model):
@@ -691,6 +767,9 @@ class Comment(models.Model):
 
     def get_absolute_url(self):
         return self.target.get_absolute_url()
+    
+    def __str__(self): 
+        return self.get_full_name()
 
 class ArticleTranslation(DraftableModel, TranslationMixin):
     '''
